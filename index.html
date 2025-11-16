@@ -10,67 +10,55 @@
     button { padding:8px 12px; background:#333; color:#fff; border:none; border-radius:4px; cursor:pointer; }
     button:hover { background:#555; }
     canvas { display:block; }
+    #status { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#666; }
   </style>
 
-  <!-- 1. Load every library in the correct order -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.168/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.168/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.168/examples/js/exporters/GLTFExporter.js"></script>
-
-  <!-- Tweakpane core -->
-  <script src="https://cdn.jsdelivr.net/npm/tweakpane@4.0.3/dist/tweakpane.min.js"></script>
-  <!-- Tweakpane plug-in (must be *after* core) -->
-  <script src="https://cdn.jsdelivr.net/npm/@tweakpane/plugin-essentials@0.2.0/dist/tweakpane-plugin-essentials.min.js"></script>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.1/simplex-noise.min.js"></script>
+  <!-- Updated CDNs (Nov 2025 latest stables) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r180/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.180.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.180.0/examples/js/exporters/GLTFExporter.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tweakpane/plugin-essentials@0.2.1/dist/tweakpane-plugin-essentials.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/simplex-noise.min.js"></script>
 </head>
 <body>
+  <div id="status">Loading libraries...</div>
   <div id="pane"></div>
   <div id="export"></div>
 
   <script>
-    // -----------------------------------------------------------------
-    // 2. Wait for *all* libraries before starting the app
-    // -----------------------------------------------------------------
-    const required = [
-      'THREE', 'OrbitControls', 'GLTFExporter',
-      'Tweakpane', 'SimplexNoise',
-      'jsPDF'   // from jspdf.umd
-    ];
-
-    function waitForLibs(callback, attempts = 100) {
-      const ready = required.every(lib => window[lib] !== undefined);
-      if (ready) return callback();
-      if (attempts <= 0) return console.error('Libraries failed to load.');
-      setTimeout(() => waitForLibs(callback, attempts - 1), 80);
+    // Loading checker with status update
+    const statusEl = document.getElementById('status');
+    const required = ['THREE', 'Tweakpane', 'SimplexNoise', 'jsPDF'];
+    function checkLoaded() {
+      const loaded = required.every(lib => window[lib] !== undefined);
+      if (loaded) {
+        statusEl.style.display = 'none';
+        init();
+      } else {
+        setTimeout(checkLoaded, 100);
+      }
     }
+    checkLoaded();  // Start polling
 
-    waitForLibs(init);
-
-    // -----------------------------------------------------------------
-    // 3. Main app
-    // -----------------------------------------------------------------
     function init() {
+      console.log('All libs loaded! Starting app...');  // GitHub debug: Check console
       const {Pane} = Tweakpane;
       const {GLTFExporter} = THREE;
       const {jsPDF} = window.jspdf;
 
-      // ---------- Scene ----------
+      // Scene setup (same as before)
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0xf8f4e8);
-
       const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
       camera.position.set(5, 4, 7);
-
       const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
       renderer.setSize(innerWidth, innerHeight);
       renderer.setPixelRatio(devicePixelRatio);
       document.body.appendChild(renderer.domElement);
-
       const controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
-
       scene.add(new THREE.AmbientLight(0xffffff, 0.6));
       const dir = new THREE.DirectionalLight(0xffffff, 0.8);
       dir.position.set(5,10,7);
@@ -79,36 +67,25 @@
       let ribbon, base;
       const simplex = new SimplexNoise();
 
-      // ---------- Geometry ----------
       function buildRibbon(p) {
-        const {turns, height, width, thickness, gridX, gridY, phase,
-               superTwist, waveAmp, waveFreq, bulge, taper, noiseAmt, tilt, wireframe, seed} = p;
-
+        const {turns, height, width, thickness, gridX, gridY, phase, superTwist, waveAmp, waveFreq, bulge, taper, noiseAmt, tilt, wireframe, seed} = p;
         const verts = [], indices = [];
         const du = 1/(gridY-1), dv = 1/(gridX-1);
 
         for (let j=0; j<gridY; j++) {
-          const u = j*du;
-          const t = u * Math.PI * 2;
-
-          const mid = 0.5;
-          const bulgeFactor = Math.exp(-Math.pow((u-mid)*6,2)*bulge);
-          const taperFactor = 1 - u*taper;
-          const env = bulgeFactor * taperFactor;
-
+          const u = j*du, t = u * Math.PI * 2;
+          const mid = 0.5, bulgeFactor = Math.exp(-Math.pow((u-mid)*6,2)*bulge);
+          const taperFactor = 1 - u*taper, env = bulgeFactor * taperFactor;
           const wave = waveAmp * Math.sin(t * waveFreq);
 
           for (let i=0; i<gridX; i++) {
             let v = (i*dv)-0.5;
             const n = noiseAmt * simplex.noise3D(v*5, u*5, seed||0);
             const wx = (v*width + wave + n) * env;
-
             const twist = 2*Math.PI * (u*turns + phase) + superTwist * Math.sin(t*0.5);
-
             const x = wx * Math.cos(twist + Math.PI*v);
             const y = height * u;
             const z = wx * Math.sin(twist + Math.PI*v);
-
             const extr = (v>=0 ? thickness : -thickness);
             verts.push(x, y, z + extr);
           }
@@ -117,8 +94,7 @@
         for (let j=0; j<gridY-1; j++) {
           for (let i=0; i<gridX-1; i++) {
             const a = j*gridX+i, b=a+1, c=a+gridX, d=c+1;
-            indices.push(a,b,c, b,d,c);   // front
-            indices.push(c,b,a, c,d,b);   // back
+            indices.push(a,b,c, b,d,c, c,b,a, c,d,b);
           }
         }
 
@@ -126,11 +102,7 @@
         geom.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
         geom.setIndex(indices);
         geom.computeVertexNormals();
-
-        const mat = new THREE.MeshStandardMaterial({
-          color:0x222222, metalness:0.9, roughness:0.2, wireframe
-        });
-
+        const mat = new THREE.MeshStandardMaterial({color:0x222222, metalness:0.9, roughness:0.2, wireframe});
         if (ribbon) scene.remove(ribbon);
         ribbon = new THREE.Mesh(geom, mat);
         ribbon.rotation.z = THREE.MathUtils.degToRad(tilt);
@@ -146,128 +118,81 @@
         scene.add(base);
       }
 
-      // ---------- Parameters ----------
-      const params = {
-        turns:2, height:4, width:1, thickness:0.06,
-        gridX:40, gridY:120, phase:0,
-        superTwist:0, waveAmp:0, waveFreq:2, bulge:0, taper:0,
-        noiseAmt:0, seed:0, tilt:0, wireframe:true, baseSize:1.2
-      };
+      // Params (same)
+      const params = {turns:2, height:4, width:1, thickness:0.06, gridX:40, gridY:120, phase:0, superTwist:0, waveAmp:0, waveFreq:2, bulge:0, taper:0, noiseAmt:0, seed:0, tilt:0, wireframe:true, baseSize:1.2};
 
-      // ---------- UI ----------
+      // UI (Tweakpane)
       const pane = new Pane({container: document.getElementById('pane')});
-
       const f1 = pane.addFolder({title:'Core'});
-      f1.addBinding(params,'turns',   {min:0, max:6, step:0.1});
-      f1.addBinding(params,'height',  {min:1, max:10, step:0.1});
-      f1.addBinding(params,'width',   {min:0.2, max:3, step:0.05});
-      f1.addBinding(params,'thickness',{min:0, max:0.2, step:0.005});
-      f1.addBinding(params,'gridX',   {min:10, max:80, step:1});
-      f1.addBinding(params,'gridY',   {min:30, max:200, step:1});
-      f1.addBinding(params,'phase',   {min:0, max:1, step:0.01});
-      f1.addBinding(params,'tilt',    {min:-90, max:90, step:1});
+      f1.addBinding(params,'turns',{min:0,max:6,step:0.1}).on('change',update);
+      f1.addBinding(params,'height',{min:1,max:10,step:0.1}).on('change',update);
+      f1.addBinding(params,'width',{min:0.2,max:3,step:0.05}).on('change',update);
+      f1.addBinding(params,'thickness',{min:0,max:0.2,step:0.005}).on('change',update);
+      f1.addBinding(params,'gridX',{min:10,max:80,step:1}).on('change',update);
+      f1.addBinding(params,'gridY',{min:30,max:200,step:1}).on('change',update);
+      f1.addBinding(params,'phase',{min:0,max:1,step:0.01}).on('change',update);
+      f1.addBinding(params,'tilt',{min:-90,max:90,step:1}).on('change',update);
 
       const f2 = pane.addFolder({title:'Shape Modulators'});
-      f2.addBinding(params,'superTwist',{min:-3, max:3, step:0.1});
-      f2.addBinding(params,'waveAmp',   {min:0, max:2, step:0.05});
-      f2.addBinding(params,'waveFreq',  {min:0, max:10, step:0.1});
-      f2.addBinding(params,'bulge',     {min:0, max:1, step:0.01});
-      f2.addBinding(params,'taper',     {min:0, max:1, step:0.01});
-      f2.addBinding(params,'noiseAmt',  {min:0, max:0.5, step:0.01});
-      f2.addBinding(params,'seed',      {min:0, max:1000, step:1});
+      f2.addBinding(params,'superTwist',{min:-3,max:3,step:0.1}).on('change',update);
+      f2.addBinding(params,'waveAmp',{min:0,max:2,step:0.05}).on('change',update);
+      f2.addBinding(params,'waveFreq',{min:0,max:10,step:0.1}).on('change',update);
+      f2.addBinding(params,'bulge',{min:0,max:1,step:0.01}).on('change',update);
+      f2.addBinding(params,'taper',{min:0,max:1,step:0.01}).on('change',update);
+      f2.addBinding(params,'noiseAmt',{min:0,max:0.5,step:0.01}).on('change',update);
+      f2.addBinding(params,'seed',{min:0,max:1000,step:1}).on('change',update);
 
       const f3 = pane.addFolder({title:'Render'});
-      f3.addBinding(params,'wireframe');
-      f3.addBinding(params,'baseSize', {min:0.5, max:2, step:0.05});
+      f3.addBinding(params,'wireframe').on('change',update);
+      f3.addBinding(params,'baseSize',{min:0.5,max:2,step:0.05}).on('change',update);
 
-      pane.on('change', update);
-
-      // ---------- Export buttons ----------
+      // Exports (same logic)
       const exp = document.getElementById('export');
       const btnGLB = document.createElement('button');
-      btnGLB.textContent = 'GLB';
-      btnGLB.onclick = exportGLB;
-      exp.appendChild(btnGLB);
-
-      const btnPDF = document.createElement('button');
-      btnPDF.textContent = 'PDF (6 views)';
-      btnPDF.onclick = exportPDF;
-      exp.appendChild(btnPDF);
-
-      // ---------- Update ----------
-      function update() {
-        buildRibbon(params);
-        buildBase(params.baseSize);
-      }
-      update();
-
-      // ---------- GLB ----------
-      function exportGLB() {
+      btnGLB.textContent = '⬇ GLB';
+      btnGLB.onclick = () => {
         const exporter = new GLTFExporter();
-        exporter.parse(ribbon, glb => {
+        exporter.parse(ribbon, (glb) => {
           const blob = new Blob([glb], {type:'model/gltf-binary'});
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url; a.download = 'sculpture.glb';
-          a.click();
-          URL.revokeObjectURL(url);
+          a.click(); URL.revokeObjectURL(url);
         }, {binary:true});
-      }
+      };
+      exp.appendChild(btnGLB);
 
-      // ---------- PDF ----------
+      const btnPDF = document.createElement('button');
+      btnPDF.textContent = '⬇ PDF (6 views)';
+      btnPDF.onclick = exportPDF;
+      exp.appendChild(btnPDF);
+
       function exportPDF() {
         const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
-        const views = [
-          {azim:0,   elev:0,   label:'Front'},
-          {azim:180, elev:0,   label:'Back'},
-          {azim:90,  elev:0,   label:'Left'},
-          {azim:-90, elev:0,   label:'Right'},
-          {azim:0,   elev:90,  label:'Top'},
-          {azim:0,   elev:-90, label:'Bottom'}
-        ];
-        const size = 80, margin = 15, cols = 2;
-
-        let i = 0;
+        const views = [{azim:0,elev:0,label:'Front'},{azim:180,elev:0,label:'Back'},{azim:90,elev:0,label:'Left'},{azim:-90,elev:0,label:'Right'},{azim:0,elev:90,label:'Top'},{azim:0,elev:-90,label:'Bottom'}];
+        const size=80, margin=15, cols=2;
+        let i=0;
         function renderNext() {
-          if (i >= views.length) { pdf.save('sculpture_views.pdf'); return; }
-          const v = views[i];
-          const col = i % cols, row = Math.floor(i/cols);
-          const x = margin + col*(size+margin);
-          const y = margin + row*(size+margin);
-
+          if (i >= views.length) return pdf.save('sculpture_views.pdf');
+          const v=views[i], col=i%cols, row=Math.floor(i/cols), x=margin+col*(size+margin), y=margin+row*(size+margin);
           const ortho = new THREE.OrthographicCamera(-3,3,3,-3,0.1,100);
-          ortho.position.setFromSphericalCoords(8,
-            THREE.MathUtils.degToRad(90-v.elev),
-            THREE.MathUtils.degToRad(v.azim));
-          ortho.lookAt(0,1.5,0);
-          ortho.updateProjectionMatrix();
-
+          ortho.position.setFromSphericalCoords(8, THREE.MathUtils.degToRad(90-v.elev), THREE.MathUtils.degToRad(v.azim));
+          ortho.lookAt(0,1.5,0); ortho.updateProjectionMatrix();
           renderer.render(scene, ortho);
-          const data = renderer.domElement.toDataURL('image/png');
-          pdf.addImage(data, 'PNG', x, y, size, size);
-          pdf.setFontSize(10);
-          pdf.text(v.label, x+size/2, y+size+8, {align:'center'});
-
-          i++;
-          setTimeout(renderNext, 60);
+          pdf.addImage(renderer.domElement.toDataURL('image/png'), 'PNG', x, y, size, size);
+          pdf.setFontSize(10); pdf.text(v.label, x+size/2, y+size+8, {align:'center'});
+          i++; setTimeout(renderNext, 60);
         }
         renderNext();
       }
 
-      // ---------- Animation ----------
-      function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-      }
+      function update() { buildRibbon(params); buildBase(params.baseSize); }
+      update();
+
+      function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
       animate();
 
-      // ---------- Resize ----------
-      window.addEventListener('resize', () => {
-        camera.aspect = innerWidth/innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(innerWidth, innerHeight);
-      });
+      window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
     }
   </script>
 </body>
