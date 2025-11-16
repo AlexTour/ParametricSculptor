@@ -1,0 +1,4 @@
+body { margin:0; overflow:hidden; background:#f8f4e8; font-family:sans-serif; }
+#pane   { position:absolute; top:12px; left:12px; z-index:100; }
+#export { position:absolute; bottom:12px; left:12px; z-index:100; display:flex; gap:8px; }
+canvas { display:block; }
